@@ -1,0 +1,253 @@
+---
+title: "Mammals and Water Availability: Data Analysis" 
+description: |
+    The aim of this study is to assess the effect of water scarcity on the distribution of an African herbivore guild along the Ruaha River, TZ
+author:
+    - name: "Stephanie Kramer-Schadt"
+      url: https://ecodynizw.github.io  
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 0000-0002-9269-4446
+    - name: "Cédric Scherer"
+      url: https://cedricscherer.com
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 0000-0003-0465-2543
+date: "`r Sys.Date()`"
+output: 
+    distill::distill_article:
+        highlight: kate     
+        code_folding: true  
+        toc: true           
+        toc_depth: 4        
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                      dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1)
+Sys.setlocale("LC_TIME", "C")
+```
+
+* **Research question:** temporal change in group_size/ counts and distance to water
+* **Study area:** Ruaha NP, TZ
+* **Data:** Survey data by Claudia Stommel 2011-2013
+
+---
+
+## Setup
+
+```{r packages}
+invisible(sapply(
+  list("d6", "sf", "dplyr", "readr", "tidyr", "terra" , "ggplot2", "stars", "ggspatial", 
+       "rcartocolor", "colorspace", "systemfonts", "patchwork", "here", "ggdensity"), 
+  library, character.only = TRUE, logical.return = TRUE
+))
+
+# ggplot theme
+theme_set(theme_d6(legend = c(.48,.95)))
+theme_update(
+  axis.text = element_text(),
+  legend.text = element_text(size = rel(.95)),
+  legend.key.height = unit(.2, "lines"),
+  legend.key.width = unit(1.5, "lines"),
+  legend.position = c(.48, .95),
+  legend.direction = "horizontal"
+)
+```
+
+
+## Figure 1: Map Study Site
+
+### Data
+
+```{r data}
+## raw data --------------------------------------------------------------------
+
+## park boundary
+park_bounds_ruaha_utm <- 
+  st_read(here("data-proc", "geo-proc", "park_bounds_ruaha_32636_edited.gpkg"))
+
+## normalized difference vegetation index
+ndvi <- rast(here("data-proc", "geo-proc", "ndvi_201307_crop_32636.tif"))
+# ndvi <- rast(here("data-proc", "geo-proc", "ndvi_201310_crop_32636.tif"))
+
+## transects
+transects <- 
+  read.table(here("data-proc","stommel_mastertable_20230127.txt"), 
+                  header = TRUE, dec = ".", na.strings = "NA", stringsAsFactors = TRUE) %>% 
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) %>% 
+  st_transform(st_crs(ndvi))
+
+transects_buffer <- transects %>% st_buffer(2000)
+
+transect_ids <- 
+  tibble::tribble(
+    ~id,  ~lon,   ~lat,
+    "5",  35.22,  -7.4,
+    "10", 35.08,  -7.55,
+    "9",  35.022, -7.62,
+    "4",  34.93,  -7.63,  
+    "8",  34.89,  -7.76,
+    "3",  34.77,  -7.73,  
+    "7",  34.77,  -7.835,
+    "2",  34.65,  -7.753, 
+    "6",  34.67,  -7.88,
+    "1",  34.54,  -7.85
+  ) %>% 
+  st_as_sf(coords = c("lon", "lat"), crs = 4326)
+
+ndvi_c <- crop(ndvi, transects_buffer)
+values(ndvi_c) <- values(ndvi_c) / 10000
+
+
+## rivers
+rivers_ruaha_utm <- st_read(here("data-proc", "geo-proc", "rivers_osm_ruaha_32636.gpkg"))
+
+rivers_ruaha_utm_c <- st_crop(rivers_ruaha_utm, transects_buffer)
+
+rivers_ruaha_utm_sub <- 
+  rivers_ruaha_utm_c %>% 
+  ## remove rivers that are not considered
+  filter(
+    !(substr(osm_id, 1, 4) %in% c("4944", "3629", "9659", "3346")),
+    osm_id != "378460637"
+  ) %>% 
+  ## add type information to color based on main vs sand rivers
+  mutate(
+    type = if_else(name %in% c("Great Ruaha", "Jongomero"), "main", "sand"),
+    type = factor(type, levels = c("pool", "sand", "main", "transect"))
+  )
+
+
+## pools
+pools <- 
+  vroom::vroom(here("data-proc", "ruaha_spring_pools.csv")) %>% 
+  add_row(WAT_ID = 0000, ID_POOL = "Legend", LON = 35.03, LAT = -7.378) %>% 
+  st_as_sf(coords = c("LON", "LAT"), crs = 4326) %>% 
+  st_transform(st_crs(park_bounds_ruaha_utm))
+
+
+## bounding box
+bbox <- st_bbox(ndvi_c)
+```
+
+### Map
+
+```{r}
+map <- 
+
+  ggplot() +
+   
+  ## ndvi
+  geom_stars(data = st_as_stars(ndvi_c), alpha = 1) +
+  scale_fill_continuous_sequential(
+    trans = "exp", palette = "Terrain 2", begin = .1, guide = "none",
+    breaks = c(seq(-.4, .8, by = .2)), limits = c(-.4, NA)
+  ) +
+
+  ggnewscale::new_scale_fill() +
+  
+  ## river outlines
+  geom_sf(data = st_buffer(rivers_ruaha_utm_sub, 500), aes(fill = type), lwd = 0) +
+  scale_fill_manual(
+    values = c("transparent", "#ebcc3b", "#a1c2e2", "black"), guide = guide_legend(reverse = TRUE), 
+    labels = c("Pools", "Sand river  ", "Main river   ", "Transects   "), name = NULL, drop = FALSE
+  ) +
+  
+  ## park boundaries
+  geom_sf(
+    data = park_bounds_ruaha_utm, color = "grey35", fill = NA, 
+    lwd = .6, linetype = "32", lineend = "round"
+  ) +
+
+  ## rivers
+  geom_sf(data = rivers_ruaha_utm_sub, aes(color = type), lwd = .8) +
+  scale_color_manual(
+    values = c("transparent", "#977d16", "#1568b8", "white"), guide = guide_legend(reverse = TRUE), 
+    labels = c("Pools", "Sand river  ", "Main river   ", "Transects   "), name = NULL, drop = FALSE
+  ) +
+    
+  ## transects
+  geom_sf(data = transects, color = "black", size = 1.5) +
+  geom_sf(data = transects, color = "white", size = .05) +
+  geom_sf_text(
+    data = transect_ids, aes(label = id), 
+    size = 5, family = "PT Serif", fontface = "bold", color = "gray10"
+  ) +
+  
+  ## pools
+  geom_sf(data = pools, size = 10, shape = "★", color = "white") +
+  geom_sf(data = pools, size = 6, shape = "★", color = "firebrick") +
+
+  ## north arrow + scaale bar
+  ggspatial::annotation_scale(
+    location = "br", text_family = "PT Sans", text_cex = .9, width_hint = .4,
+    pad_x = unit(4.5, "lines"), pad_y = unit(.35, "cm"), text_pad = unit(.35, "cm")
+  ) +
+  ggspatial::annotation_north_arrow(location = "br") +
+  
+  ## bounding box
+  coord_sf(expand = FALSE, xlim = bbox[c(1,3)], ylim = bbox[c(2,4)]) +
+  
+  ## axis titles
+  labs(x = "Longitude", y = "Latitude")
+
+
+park <-
+  ggplot() +
+   
+  ## park boundaries
+  geom_sf(
+    data = park_bounds_ruaha_utm, color = "grey35", fill = "white",
+    lwd = .5, linetype = "32", lineend = "round"
+  ) +
+
+  ## rivers
+  geom_sf(data = rivers_ruaha_utm_sub, aes(color = type), lwd = .5) +
+  scale_color_manual(
+    values = c("#977d16", "#1568b8"), guide = "none"
+  ) +
+  
+  ## bounding box
+  geom_sf(data = st_as_sfc(bbox), color = "black", fill = NA, linewidth = 1.2) +
+  
+  ## projection
+  coord_sf(crs = st_crs(park_bounds_ruaha_utm)) +
+  
+  ## theming
+  theme_void() +
+  theme(panel.background = element_rect(fill = NA, color = NA))
+
+
+globe <- 
+  d6berlin::globe(
+    col_earth = "grey80", #"#B7D19D",
+    col_water = "white", #"#A9C9EB",
+    bg = TRUE,
+    center = c(34.93544, -0.68140)
+  )
+  
+
+map_globe <- map + 
+  inset_element(park, left = 0, right = .21, bottom = .5, top = .75) +
+  inset_element(globe, left = 0, right = .21, bottom = .76, top = .99)
+
+
+ggsave(here("plots", "Fig1_study_area.png"), width = 10, 
+       height = 7.67, dpi = 600, bg = "white") 
+```
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+Sys.time()
+git2r::repository()
+sessionInfo()
+```
+
+</details>
