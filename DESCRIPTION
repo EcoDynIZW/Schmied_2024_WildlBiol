@@ -1,0 +1,10 @@
+Package: mammals_africa_transects_stommel
+Title: Stommel_2023_WildlifeBiol
+Version: 0.0.0.9000
+Authors@R: person('Stephanie', 'Kramer-Schadt', email = 'kramer@izw-berlin.de', role = c('cre', 'aut'))
+Description: Effect of human induced surface water scarcity on herbivore distribution during the dry season in Ruaha National Park, Tanzania
+License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
+    license
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
