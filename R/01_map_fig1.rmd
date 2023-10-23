@@ -1,5 +1,5 @@
 ---
-title: "Mammals and Water Availability: Data Analysis" 
+title: "Mammals and Water Availability: Study Area" 
 description: |
     The aim of this study is to assess the effect of water scarcity on the distribution of an African herbivore guild along the Ruaha River, TZ
 author:
@@ -17,7 +17,7 @@ date: "`r Sys.Date()`"
 output: 
     distill::distill_article:
         highlight: kate     
-        code_folding: true  
+        code_folding: false  
         toc: true           
         toc_depth: 4        
 editor_options: 
@@ -62,9 +62,7 @@ theme_update(
 
 ### Data
 
-```{r data}
-## raw data --------------------------------------------------------------------
-
+```{r data, results='hide'}
 ## park boundary
 park_bounds_ruaha_utm <- 
   st_read(here("data-proc", "geo-proc", "park_bounds_ruaha_32636_edited.gpkg"))
@@ -76,11 +74,11 @@ ndvi <- rast(here("data-proc", "geo-proc", "ndvi_201307_crop_32636.tif"))
 ## transects
 transects <- 
   read.table(here("data-proc","stommel_mastertable_20230127.txt"), 
-                  header = TRUE, dec = ".", na.strings = "NA", stringsAsFactors = TRUE) %>% 
-  st_as_sf(coords = c("lon", "lat"), crs = 4326) %>% 
+                  header = TRUE, dec = ".", na.strings = "NA", stringsAsFactors = TRUE) |> 
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) |> 
   st_transform(st_crs(ndvi))
 
-transects_buffer <- transects %>% st_buffer(2000)
+transects_buffer <- transects |> st_buffer(2000)
 
 transect_ids <- 
   tibble::tribble(
@@ -95,7 +93,7 @@ transect_ids <-
     "2",  34.65,  -7.753, 
     "6",  34.67,  -7.88,
     "1",  34.54,  -7.85
-  ) %>% 
+  ) |> 
   st_as_sf(coords = c("lon", "lat"), crs = 4326)
 
 ndvi_c <- crop(ndvi, transects_buffer)
@@ -108,12 +106,12 @@ rivers_ruaha_utm <- st_read(here("data-proc", "geo-proc", "rivers_osm_ruaha_3263
 rivers_ruaha_utm_c <- st_crop(rivers_ruaha_utm, transects_buffer)
 
 rivers_ruaha_utm_sub <- 
-  rivers_ruaha_utm_c %>% 
+  rivers_ruaha_utm_c |> 
   ## remove rivers that are not considered
   filter(
     !(substr(osm_id, 1, 4) %in% c("4944", "3629", "9659", "3346")),
     osm_id != "378460637"
-  ) %>% 
+  ) |> 
   ## add type information to color based on main vs sand rivers
   mutate(
     type = if_else(name %in% c("Great Ruaha", "Jongomero"), "main", "sand"),
@@ -123,9 +121,9 @@ rivers_ruaha_utm_sub <-
 
 ## pools
 pools <- 
-  vroom::vroom(here("data-proc", "ruaha_spring_pools.csv")) %>% 
-  add_row(WAT_ID = 0000, ID_POOL = "Legend", LON = 35.03, LAT = -7.378) %>% 
-  st_as_sf(coords = c("LON", "LAT"), crs = 4326) %>% 
+  vroom::vroom(here("data-proc", "ruaha_spring_pools.csv")) |> 
+  add_row(WAT_ID = 0000, ID_POOL = "Legend", LON = 35.03, LAT = -7.378) |> 
+  st_as_sf(coords = c("LON", "LAT"), crs = 4326) |> 
   st_transform(st_crs(park_bounds_ruaha_utm))
 
 
@@ -135,7 +133,7 @@ bbox <- st_bbox(ndvi_c)
 
 ### Map
 
-```{r}
+```{r ruaha-np-map, fig.width=10, fig.height=7.67}
 map <- 
 
   ggplot() +
@@ -234,9 +232,10 @@ map_globe <- map +
   inset_element(park, left = 0, right = .21, bottom = .5, top = .75) +
   inset_element(globe, left = 0, right = .21, bottom = .76, top = .99)
 
+map_globe
 
-ggsave(here("plots", "Fig1_study_area.png"), width = 10, 
-       height = 7.67, dpi = 600, bg = "white") 
+ggsave(here("plots", "Fig1_study_area.png"), 
+       width = 10, height = 7.67, dpi = 600, bg = "white") 
 ```
 
 
