@@ -4,3 +4,9 @@
 .httr-oauth
 .DS_Store
 .quarto
+
+## ignore docs except rendered reports and literature
+/docs/admin/*
+/docs/manuscript/*
+/docs/material/*
+/docs/presentations/*
