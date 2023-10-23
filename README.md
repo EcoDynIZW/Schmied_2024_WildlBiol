@@ -1,5 +1,5 @@
 
-# Stommel et al. (submitted)
+# Schmied et al. (submitted)
 
 <!-- badges: start -->
 <!-- badges: end -->
