@@ -224,7 +224,7 @@ bbmle::AICtab(nullmod1, nullmod2, nullmod3, nullmod4, nullmod5,
 
 
 ```{r}
-saveRDS(specmod4, here::here("output", "mod444_20231113.rds"))
+saveRDS(specmod4, here::here("output", "mod444_20230619.rds"))
 
 mvvss <- specmod4
 ```
