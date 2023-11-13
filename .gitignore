@@ -10,3 +10,6 @@
 /docs/manuscript/*
 /docs/material/*
 /docs/presentations/*
+
+## ignore copy of old project files
+/_archive
