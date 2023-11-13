@@ -1,0 +1,640 @@
+---
+title: "Mammals and Water Availability: Plots Study Results"
+description: |
+    The aim of this study is to assess the effect of water scarcity on the distribution of an African herbivore guild along the Ruaha River, TZ
+author:
+    - name: "Stephanie Kramer-Schadt"
+      url: https://ecodynizw.github.io  
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 0000-0002-9269-4446
+    - name: "Cédric Scherer"
+      url: https://cedricscherer.com
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 0000-0003-0465-2543
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  distill::distill_article:
+    highlight: kate      
+    code_folding: false   
+    toc: true            
+    toc_depth: 4         
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE, 
+  dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1
+)
+Sys.setlocale("LC_TIME", "C")
+```
+
+* **Research question:** temporal change in group_size/ counts and distance to water
+* **Study area:** Ruaha NP, TZ
+* **Data:** Survey data by Claudia Stommel 2011-2013
+
+---
+
+# Setup
+
+## Libraries
+
+```{r libraries}
+## statistical analyses
+library(MuMIn) 
+library(ggeffects)
+library(jtools)
+library(DHARMa)
+library(glmmTMB)
+library(mgcv)
+library(broom.mixed)
+
+## helpers
+library(here)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(tidymv)
+
+## viz 
+library(d6)
+library(ggplot2)
+library(RColorBrewer)
+library(rcartocolor)
+library(ggdensity)
+library(prismatic)
+library(patchwork)
+library(magick)
+```
+
+
+## Theme
+
+```{r theme}
+# ggplot theme
+theme_set(theme_d6())
+```
+
+
+## Data
+
+```{r loaddata}
+df_transects <- readRDS(here::here("output", "stommel_mastertable_20230127_cleaned.rds"))
+
+head(df_transects)
+names(df_transects)
+#summary(df_transects)
+```
+
+
+## Define Labels
+
+```{r set-labels}
+# species sorting alphabetically according to their feeding type
+# B        CD       E           G       I      K        Wb      Wh    Z
+# grazer   omni     mixed       browser mixed  browser  grazer  omni  grazer
+
+# Grazer:  B, Wb, Z
+# mixed:   E, I,
+# browser: G, K
+# omni:    CD, Wh
+
+species_labels <- as_labeller(
+  c(`B`  = "Buffalo",
+    `Wb` = "Waterbuck",
+    `Z`  = "Zebra",
+    `E`  = "Elephant",
+    `I`  = "Impala",
+    `G`  = "Giraffe",
+    `K`  = "Kudu",
+    `Wh` = "Warthog",
+    `CD` = "Common duiker")
+)
+
+river_comp_labels <- as_labeller(
+  c(`0`  = "upper",
+    `1`  = "along",
+    `2`  = "perpend")
+)
+```
+
+
+## Define Color Codes
+
+```{r set-colors}
+## create table matching colors to species, grouped by feeding type
+df_spec_colours <- data.frame(
+  species = levels(df_transects$species), ## is orderd by feedtype (see above)
+  color = c(
+    brewer.pal(name = "YlGn", n = 9)[c(5,7,9)], ## grazer (3)
+    carto_pal(name = "Burg", n = 7)[c(4,6)],    ## mixed (2)
+    brewer.pal(name = "Blues", n = 7)[c(4,6)],  ## browser (2)
+    carto_pal(name = "Purp", n = 7)[c(4,6)]     ## omni (2)
+  )
+)
+
+my_spec_colours <- df_spec_colours$color
+names(my_spec_colours) <- df_spec_colours$species
+
+
+## create feeding type colors, as middle color of species colors above
+my_feedtype_colours <- c(
+  brewer.pal(name = "YlGn", n = 9)[7],  ## grazer
+  brewer.pal(name = "Blues", n = 7)[5], ## browser
+  carto_pal(name = "Burg", n = 7)[5],   ## mixed
+  carto_pal(name = "Purp", n = 7)[5]    ## omni
+)
+
+## create color code for the 3 river classes (downstream/midstream/upstream)
+my_river_class_cols <- c( "cadetblue1", "navyblue","lightblue") 
+my_alongside_cols   <- c( "navyblue","cadetblue1") 
+
+## create color code for seasons
+my_season_cols      <- c("#637D37", "#E8CF55")
+
+## create color code for distances
+my_dist_class_cols  <- c("cadetblue1", "peachpuff4") 
+
+## 
+colors <- c("#FF0000", "#0000FF")
+color_ramp <- colorRampPalette(colors)(6)
+my_all_in_one_cols <- color_ramp
+my_transect_cols <- viridis::turbo(n = 10)
+```
+
+
+# Main Tables
+
+## Table 1 
+
+Summarize the total counts per river section (perpendicular/ alongside). This might be misleading, as the same species were counted at every sampling event (33 weeks across the 3 years). 
+
+```{r table-1}
+data_table_1 <- 
+  df_transects |> 
+  group_by(transect_GRR, year, species, feed_type_A_char, dry_season) |> 
+  summarize(
+    sum_species_count = sum(species_count),
+    mean_group_size   = round(mean(species_count), digits = 2),
+    sd_group_size     = round(sd(species_count), digits = 2),
+    mean_species_distance = round(mean(distance_to_water), digits = 2),
+    sd_species_distance   = round(sd(distance_to_water), digits = 2)
+  )
+
+data_table_1
+
+table_1 <- 
+  data_table_1 |>
+  select(
+    transect_GRR ,year,species,feed_type_A_char, dry_season,
+    sum_species_count, mean_group_size, mean_species_distance
+  ) |>
+  pivot_wider(
+    names_from = c(year,dry_season),
+    values_from = c(sum_species_count, mean_group_size, mean_species_distance)
+  )
+
+write.table(
+  x = table_1,
+  file = here("output", "stommel_transects_table_1.txt"),
+  sep = '\t', col.names = TRUE, row.names = FALSE
+)
+```
+
+
+
+# Main Figures
+
+
+## Figure 1: Map Study Area
+
+Separate .rmd file: ./R/01_map_fig1.rmd
+
+
+## Figure 2: Herd Sizes
+
+```{r fig-2, message=FALSE, fig.width=20*0.3937, fig.height=15*0.3937}
+data_table_2 <- 
+  df_transects |> 
+  group_by(year, week, transect_GRR, dry_season, feed_type_A_char, species) |> 
+  summarize(
+    sum_species_count     = sum(species_count),
+    mean_group_size       = round(mean(species_count), digits = 2),
+    sd_group_size         = round(sd(species_count), digits = 2),
+    mean_species_distance = round(mean(distance_to_water), digits = 2),
+    sd_species_distance   = round(sd(distance_to_water), digits = 2)
+  )
+
+#summary(data_table_2)
+
+ggplot(data_table_2, aes(x = transect_GRR, y = sum_species_count, fill = dry_season)) + 
+  geom_boxplot(width = .7, color = "black", linewidth = .2, outlier.size = .3,
+               position = position_dodge(preserve = "single")) + 
+  facet_wrap(~ species, scale = "free_y", ncol = 3, 
+             labeller = labeller(species = species_labels)) +
+  scale_y_continuous(expand = expansion(mult = c(.005, .1)), limits = c(0, NA)) +
+  scale_fill_manual(values = my_season_cols, name = "Dry season:") + 
+  labs(x = "Transect section", 
+       y = "Total count of individuals per sighting") +
+  scale_x_discrete(labels = c("alongs.", "perpend.")) +
+  theme_d6(grid = "y") +
+  theme(#axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.text.x = element_text(angle = 35, vjust = 1, hjust = 1), 
+        panel.spacing.x = unit(1, "lines"))
+
+ggsave(here("plots", "Fig2_herd_sizes_transect_GRR.png"), 
+       width = 20, height = 15, units = "cm", dpi = 600, bg = "white")
+```
+
+
+## Figure 3: Median Distances per Species and Transect GRR
+
+```{r fig-3, fig.width=15*0.3937, fig.height=12*0.3937}
+ggplot(df_transects, aes(x = dry_season, y = distance_to_water, fill = species)) + 
+  geom_boxplot(
+    aes(fill = species),
+    width = 1, color = "grey90", outlier.shape = 21
+  ) + 
+  facet_wrap(~ transect_GRR, scale = "free_y", labeller = labeller(species = species_labels)) +
+  scale_y_continuous(
+    labels = scales::label_comma(), limits = c(0, NA),
+    expand = expansion(mult = c(.001, .05))
+  ) +  
+  scale_fill_manual(
+    values = clr_darken(my_spec_colours, .3), name = "Species:",
+    guide = guide_legend(byrow = TRUE, nrow = 1, label.position = "bottom")
+  ) +
+  labs(x = "Dry season", y = "Distance to water [m]") +
+  theme_d6(grid = "y") +
+  theme(legend.key.width = unit(2, "lines"),
+        legend.justification = "left")
+
+ggsave(here("plots", "Fig3_distance_to_water_class.png"), 
+       width = 15, height = 12, units = "cm", dpi = 600, bg = "white")
+```
+
+
+
+# Supplement Materials
+
+## Table S2: Sightings per Species
+
+Summarise number of sightings (not counts) per species per season for reviewer
+
+```{r summary-sightings}
+sight <- table(df_transects$dry_season, df_transects$species)
+sight <- table(df_transects$dry_season, df_transects$species, df_transects$transect_GRR)
+sight
+```
+
+
+## Figure S1: GAM
+
+```{r, fig-s1-gam, fig.width=21*0.3937, fig.height=15*0.3937}
+gam_mod <- gam(
+  distance_to_water_rounded ~  species +  s(juldate, by = species, k = 3),
+  family = nb(),
+  data = df_transects
+)
+
+#summary(gam_mod)
+
+#R-sq.(adj) =  0.113   Deviance explained = 10.4%
+#-REML =  30895  Scale est. = 1         n = 3686
+
+model_p <- predict_gam(gam_mod)
+
+model_p |>
+  ggplot(aes(juldate, fit, fill = species)) +
+  geom_smooth_ci(species, linewidth = 1.2) +
+  geom_line(aes(group = species), lwd = 2.5, color = "white") + 
+  geom_smooth_ci(species, linewidth = 1.2) +
+  labs(title = NULL, x = "Day since June 1st", y = "Smoothing function") +
+  scale_color_manual(values = my_spec_colours, name = "Species:") +
+  scale_fill_manual(values = my_spec_colours, name = "Species:") +
+  scale_linetype_discrete(name = "Species:") +
+  guides(color = guide_legend(nrow = 1))
+
+ggsave(here("plots", "FigS1_model_fits_gam.png"), 
+       width = 21, height = 15, units = "cm", dpi = 600, bg = "white") 
+```
+
+
+## Figure S2: Seasonal Densitiy Distributions
+
+```{r prep-fig-densities}
+## to calculate densities we need individual sighting data
+df_transects_uncount <- tidyr::uncount(df_transects, species_count)
+
+## function to create density plot as grid for all or selected species 
+plot_densities <- function(spec = "all") {
+  if (any(spec == "all")) { 
+    dat <- df_transects_uncount
+  } else {
+    dat <- filter(df_transects_uncount, species %in% spec)
+  }
+  
+  ggplot(dat, aes(lon, lat , fill = dry_season)) +
+    geom_hdr() +
+    geom_hdr_lines(aes(color = dry_season), lwd = .5) + 
+    geom_point(shape = 21, size = .1) +
+    geom_hdr_rug() +
+    facet_wrap(~ species, labeller = labeller(species = species_labels)) +
+    scale_color_manual(values = clr_darken(my_season_cols, .2), name = NULL) +
+    scale_fill_manual(values = my_season_cols, name = NULL) +
+    labs(x = "Longitude", y = "Latitude") +
+    theme_d6(grid = "none")
+}
+```
+
+All species for supplement figure
+
+```{r, fig-s2-all, fig.width=20*0.3937, fig.height=20*0.39370}
+plot_densities(spec = "all")
+
+ggsave(here("plots", "FigS2_density_plots_all.png"), 
+       width = 20, height = 20, units = "cm", dpi = 600, bg = "white")
+```
+
+Selected species for main figure: Zebra, Wb and B
+
+```{r, fig-s2-selected, fig.width=20*0.3937, fig.height=9*0.3937}
+plot_densities(spec = c("Z", "Wb", "B"))
+
+# ggsave(here("plots", "FigS2_density_plots_selected.png"), 
+#        width = 20, height = 9, units = "cm", dpi = 600, bg = "white")
+```
+
+
+## Figure S3: Mean Group Sizes 
+
+```{r, fig-s3, fig.width=15*0.3937, fig.height=15*0.3937}
+data_table_3 <- 
+  df_transects |> 
+  group_by(fyear, week, dry_season,species) |> 
+  summarize(
+    sum_species_count     = sum(species_count),
+    mean_group_size       = round(mean(species_count), digits = 2),
+    sd_group_size         = round(sd(species_count), digits = 2),
+    mean_species_distance = round(mean(distance_to_water), digits = 2),
+    sd_species_distance   = round(sd(distance_to_water), digits = 2)
+  )
+
+#summary(data_table_3)
+
+ggplot(data_table_3, aes(x = dry_season, y = mean_group_size, fill = species)) + 
+  geom_boxplot(width = .5, color = "black", position = position_dodge(width = 1)) +   
+  facet_wrap(~ species, scale = "free_y", ncol = 3, 
+             labeller = labeller(species = species_labels)) +
+  scale_y_continuous(expand = expansion(mult = c(.005, .1)), limits = c(0, NA)) +
+  scale_fill_manual(values = my_spec_colours, guide = "none") +
+  labs(x = "Dry season", y = "Average group size per sampling week") +
+  theme_d6(grid = "y")
+
+ggsave(here("plots", "FigS3_mean_group_sizes.png"), 
+       width = 20, height = 20, units = "cm", dpi = 600, bg = "white")
+```
+
+
+
+## Figure S4 + S5: Model Results
+
+### GLMM model fit
+
+-> models were run on outsourced file 5_b_DataAnalysis_sourcedModels_20230619.rmd
+
+```{r}
+## not run
+# source(here("R", "5_b_DataAnalysis_sourcedModels_20230619.rmd"))
+```
+
+Load best model:
+
+```{r model-best}
+rds <- here("output", "mod444_20230619.rds")
+
+## for now always run model due to version issues across computers
+if (!file.exists(rds)) {
+  mvvss <- glmmTMB(
+    distance_to_water_rounded ~ species * (juldate + transect_GRR) + (1 | ftransect_id) ,
+    data = df_transects, family = nbinom2, na.action = na.fail)
+  
+  write_rds(mvvss, file = rds)
+} else {
+  mvvss <- read_rds(rds) 
+}
+```
+
+```{r model-results}
+mod_summary <- summary(mvvss)
+#mod_summary
+
+mod_res   <- as.data.frame(round(mod_summary$coefficients$cond, digits = 7))
+mod_names <- dimnames(mod_summary$coefficients$cond)[[1]]
+
+res_table <- cbind(mod_names,mod_res)
+#res_table
+
+write.table(
+  x = res_table,
+  file = here("output", "model_feed_results_20230716.txt"),
+  sep = '\t', col.names = TRUE, row.names = FALSE
+)
+```
+
+
+### Figure S4: Model Diagnostics with DHARMa
+
+```{r DHARMa}
+testDispersion(mvvss)
+simulationOutput <- simulateResiduals(fittedModel = mvvss, plot = FALSE)
+
+png(here("plots", "FigS4b_dharma_residuals.png"), width = 700, height = 500)
+plot(simulationOutput)
+dev.off()
+# 
+# testOutliers(simulationOutput, type = "bootstrap")
+# 
+# png(here("plots", "FigS4a_dharma_prediction_cat.png"), width = 700, height = 400)
+# testCategorical(simulationOutput, catPred = df_transects$species) 
+# dev.off()
+# 
+# testCategorical(simulationOutput, catPred = df_transects$transect_GRR)
+# 
+# testZeroInflation(simulationOutput)
+```
+
+
+### Figure S5: Regression Coefficient Plots
+
+```{r fig-s5, fig.width=20*0.3937, fig.height=23*0.3937}
+jtools::plot_summs(mvvss, inner_ci_level = .75) +
+  labs(y = NULL) +
+  theme_d6(grid = "x", mono = "x") +
+  theme(axis.text.y = element_text(hjust = 0),
+        panel.border = element_blank(),
+        axis.ticks = element_blank())
+
+ggsave(here("plots", "FigS5_model_effects.png"), width = 20, height = 23, unit = "cm", bg = "white")
+
+MuMIn::r.squaredGLMM(mvvss)
+```
+
+
+### Figure S6: GLMM Random Effects
+
+```{r fig-s6, fig.width=15*0.3937, fig.height=12*0.3937}
+re <- ranef(mvvss)
+
+dd <- as.data.frame(re)
+
+ggplot(dd, aes(y = grp, x = condval)) +
+  geom_point() + 
+  geom_errorbarh(aes(xmin = condval - 2 * condsd, xmax = condval + 2 * condsd), height = 0) +
+  geom_vline(xintercept = 0, color = 'black', lty = 2) +
+  scale_y_discrete(expand = c(0.05, 0)) +
+  labs(x = "conditional effect", y = "transect ID",
+       title = "Intercept") 
+
+
+## alternative version
+dd |> 
+  mutate(
+    lwr = condval - 2 * condsd,
+    upr = condval + 2 * condsd,
+    ci = if_else(lwr < 0 & upr > 0, TRUE, FALSE)
+  ) |> 
+  ggplot(aes(y = grp, x = condval)) +
+  geom_point(aes(color = ci), size = 2) + 
+  geom_errorbarh(aes(xmin = lwr, xmax = upr, color = ci), height = 0) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_y_discrete(expand = c(0.05, 0)) +
+  scale_color_manual(values = c("firebrick", "dodgerblue"), guide = "none") +
+  labs(x = "conditional effect", y = "transect ID",
+       title = "Intercept") 
+   
+ggsave(here("plots", "FigS6_random_effects_transID.png"), 
+       width = 15, height = 12, units = "cm", dpi = 600, bg = "white")
+```
+
+
+
+# Figures for Reviewers
+
+## Heatmap Sampling Transects
+
+Summarise the time intervals at which each transect was sampled for reviewer.
+
+```{r heatmap-time-intervals}
+table(df_transects$weeks_all[df_transects$year == 2011], df_transects$ftransect_id[df_transects$year == 2011])
+
+sy <- 2011 ## transect drive year
+td <- table(df_transects$juldate[df_transects$year == sy], df_transects$ftransect_id[df_transects$year == sy])
+m_td <- as.matrix(td)
+colMain <- colorRampPalette(brewer.pal(8, "Blues"))(25)
+heatmap(m_td, Colv = NA, Rowv = NA, scale = "column",col = colMain,
+        xlab = "transect", ylab = "day since onset of dry season")
+```
+
+
+# Old Figures
+
+## Silhoutte Plot Study Species
+
+```{r  plot-phylopics, fig.width=15*0.3937, fig.height=2*0.3937}
+## paths to images
+zebra <- image_read("https://images.phylopic.org/images/81caf94e-5cbe-4e5e-8101-545abea2bfc0/raster/512x358.png")
+kudu <- image_read("https://images.phylopic.org/images/e590147d-93c5-4d81-bbbf-bd1410cf8135/raster/1536x1055.png?build=159")
+elephant <- image_read("https://images.phylopic.org/images/80db1004-bc9f-4318-84e7-cdd9639a1f3e/raster/1536x952.png?build=159")
+giraffe <- image_read("https://images.phylopic.org/images/bbce74cf-4df3-4b7d-8b1d-f5b24dd3264a/raster/144x190.png")
+duiker <- image_read(here("plots", "commonduiker_pathed_rohering.png"))
+warthog <- image_read("https://images.phylopic.org/images/b1a641cd-25df-4dd0-865f-1a2728bd267e/raster/1536x916.png?build=159")
+buffalo <- image_read("https://images.phylopic.org/images/65c4a9b3-dcde-4f0f-9a1f-8d71e74be9ec/raster/174x127.png?build=159")
+impala <- image_read("https://images.phylopic.org/images/e07d1491-1d85-4c47-9f7d-075ea57bf0c5/raster/1536x1079.png?build=159")
+waterbuck <- image_read("https://images.phylopic.org/images/f93103f1-e2a0-4c73-b274-c7b51afe4db0/raster/829x1024.png?build=159")
+
+## import images
+img <- function(png) { grid::rasterGrob(png, interpolate = FALSE) }
+
+## create graphic
+animals <- wrap_plots(
+  img(zebra), img(waterbuck),img(buffalo),
+  img(impala),img(elephant),
+  img(giraffe),img(kudu),   
+  img(warthog),img(duiker),   
+  nrow = 1
+)
+
+animals + plot_layout(widths = c(0.8, 1, 1.4, 1.2, 1.4, 0.8, 1.3, 0.8, 0.8))
+
+# ggsave(here("plots", "animals.png"), 
+#        width = 15, height = 2, units = "cm", dpi = 600, bg = "white")
+``` 
+
+
+## Model Fits per Species
+
+```{r model-fits-species, fig.width=30*0.3937, fig.height=15*0.3937}
+mydfss1 <- ggpredict(mvvss, terms = c("juldate", "species",  "transect_GRR [alongside]")) 
+mydfss2 <- ggpredict(mvvss, terms = c("juldate", "species", "transect_GRR [perpendicular]"))
+
+plot_predict <- function(data, upper_y, title) {
+  ggplot(data = data, aes(x = x, y = predicted)) + 
+    geom_ribbon(
+      aes(ymin = conf.low, ymax = conf.high, group = group), 
+      fill = "white"
+    ) + 
+    geom_ribbon(
+      aes(ymin = conf.low, ymax = conf.high, fill = group, 
+          fill = after_scale(clr_desaturate(clr_lighten(fill, .2), .3)),
+          color = after_scale(clr_lighten(fill, .6))), 
+      alpha = .15, lwd = .2
+    ) + 
+    geom_line(aes(group = group), lwd = 2, color = "white") + 
+    geom_line(aes(color = group), lwd = 1.2) + 
+    coord_cartesian(expand = FALSE, ylim = c(0, upper_y)) +
+    scale_y_continuous(labels = scales::label_comma(suffix = " km", scale = 1 / 1000)) +
+    scale_color_manual(values = my_spec_colours, name = "Species:") +
+    scale_fill_manual(values = my_spec_colours, name = "Species:") +
+    guides(color = guide_legend(nrow = 1), fill = guide_legend(nrow = 1)) +
+    labs(x = "Days since June 1st", y = "Distance to water", title = title) +
+    theme(legend.key.width = unit(2, "lines"))
+}
+
+p1 <- plot_predict(mydfss1, upper_y =  3000, title = "Alongside transects")
+p2 <- plot_predict(mydfss2, upper_y = 13000, title = "Perpendicular transects") +
+        scale_y_continuous(labels = scales::label_comma(suffix = " km", scale = 1 / 1000), 
+                           breaks = 0:4*3000) + 
+        labs(y = NULL)
+
+(p1 + p2) * theme(plot.title.position = "panel") + 
+  plot_layout(guides = "collect")
+
+# ggsave(here("plots", "Fig4_negbin_prediction_mod444_both.png"), 
+#        width = 30, height = 15, units = "cm", dpi = 600, bg = "white")
+```
+
+
+# References
+
+```{r}
+citation("ggplot2")
+citation("glmmTMB")
+citation("DHARMa")
+```
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+Sys.time()
+git2r::repository()
+sessionInfo()
+```
+
+</details>
