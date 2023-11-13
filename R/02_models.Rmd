@@ -1,0 +1,243 @@
+---
+title: "Mammals and Water Availability: Models"
+description: |
+    The aim of this study is to assess the effect of water scarcity on the distribution of an African herbivore guild along the Ruaha River, TZ
+author:
+    - name: "Stephanie Kramer-Schadt"
+      url: https://ecodynizw.github.io  
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 0000-0002-9269-4446
+    - name: "Cédric Scherer"
+      url: https://cedricscherer.com
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 0000-0003-0465-2543
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: 
+  distill::distill_article:
+    highlight: kate      
+    code_folding: false   
+    toc: true            
+    toc_depth: 4         
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE, 
+  dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1
+)
+Sys.setlocale("LC_TIME", "C")
+```
+
+* **Research question:** temporal change in group_size/ counts and distance to water
+* **Study area:** Ruaha NP, TZ
+* **Data:** Survey data by Claudia Stommel 2011-2013
+
+---
+
+# Setup
+
+Load packages and the field data file; prepare it for further analysis and plotting.
+
+```{r}
+library(dplyr)
+library(glmmTMB)
+
+df_transects <- 
+  read.table(
+    here::here("data", "stommel_mastertable_20230127.txt"), 
+    header = TRUE, dec = ".", na.strings = "NA", stringsAsFactors = TRUE
+  ) |> 
+  as_tibble() |> 
+  ## move mixed before browser for plotting
+  mutate(
+    FEEDTYPE_custom = case_when(
+      FEEDTYPE_A == 2 ~ 3L, FEEDTYPE_A == 3 ~ 2L, TRUE ~ as.integer(FEEDTYPE_A)
+    )
+  ) |> 
+  arrange(FEEDTYPE_custom) |> 
+  mutate(
+    feedtype = case_when(
+      FEEDTYPE_custom == 1 ~ "grazer",
+      FEEDTYPE_custom == 2 ~ "mixed", 
+      FEEDTYPE_custom == 3 ~ "browser",
+      FEEDTYPE_custom == 4 ~ "omni"
+    ),
+    species = forcats::fct_inorder(factor(species)),
+    species = forcats::fct_relevel(species, "Z", after = 0), 
+    fyear = factor(year),
+    ftransect_id = factor(transect_id),
+    fweeks_all = factor(weeks_all), # these are the 33 consecutive weeks across years
+    fweek = factor(week),
+    river_comp = as.character(transect_GRR),
+    river_comp = if_else(transect_id %in% c(6, 7), "upper", transect_GRR),
+    river_comp = case_when(
+      river_comp == "alongside" ~ "along",
+      river_comp == "perpendicular" ~ "perpend",
+      .default = river_comp
+    ),
+    friver_comp = factor(river_comp),
+    dist_class = if_else(distance_to_water <= 1000, "close", "far")
+  )
+
+
+readr::write_rds(df_transects, here::here("output", "stommel_mastertable_20230127_cleaned.rds"))
+```
+
+
+
+# Revision models
+
+```{r}
+nullmod1 <- glmmTMB(distance_to_water_rounded ~  
+                 1  + (1 | fyear) + (1 | ftransect_id) , 
+                 data = df_transects, 
+                 family = nbinom2)
+
+
+nullmod2 <- glmmTMB(distance_to_water_rounded ~  
+                 1  + (1 | fyear)  , 
+                 data = df_transects, 
+                 family = nbinom2)
+
+nullmod3 <- glmmTMB(distance_to_water_rounded ~  
+                 1  + (1 | ftransect_id) , 
+                 data = df_transects, 
+                 family = nbinom2)
+
+# null models suggested by reviewer
+nullmod4 <- glmmTMB(distance_to_water_rounded ~
+                 juldate  + (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+nullmod5 <- glmmTMB(distance_to_water_rounded ~
+                 transect_GRR  + (1 | fyear) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+
+
+bbmle::AICtab(nullmod1, nullmod2, nullmod3, nullmod4, nullmod5)
+              
+# species_count does not make sense for feed_types, therefore 2 diff full models
+
+
+feedmod1 <- glmmTMB(distance_to_water_rounded ~
+                 feed_type_A_char * juldate +  
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+feedmod2 <- glmmTMB(distance_to_water_rounded ~
+                 feed_type_A_char * (juldate + transect_GRR) +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+feedmod3 <- glmmTMB(distance_to_water_rounded ~
+                 feed_type_A_char + juldate   + transect_GRR +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+
+
+### simple species models
+
+specmod1 <- glmmTMB(distance_to_water_rounded ~
+                 species * (juldate )  +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+
+specmod2 <- glmmTMB(distance_to_water_rounded ~
+                 species * (juldate + species_count ) + transect_GRR +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+specmod3 <- glmmTMB(distance_to_water_rounded ~
+                 juldate + (species * species_count ) + transect_GRR +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 family = nbinom2)
+
+specmod4 <- glmmTMB(distance_to_water_rounded ~
+                 species * (juldate + transect_GRR)  +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 na.action = na.fail,
+                 family = nbinom2)
+
+
+specmod5 <- glmmTMB(distance_to_water_rounded ~
+                 species * (juldate + transect_GRR) + species_count  +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 na.action = na.fail,
+                 family = nbinom2)
+
+
+specmod6 <- glmmTMB(distance_to_water_rounded ~
+                 species * (juldate + transect_GRR + species_count)  +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 na.action = na.fail,
+                 family = nbinom2)
+
+specmod7 <- glmmTMB(distance_to_water_rounded ~
+                 species + species_count * (juldate  + transect_GRR) +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 na.action = na.fail,
+                 family = nbinom2)
+
+specmod8 <- glmmTMB(distance_to_water_rounded ~
+                 juldate * species * transect_GRR +
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 na.action = na.fail,
+                 family = nbinom2)
+
+
+specfeedmod <- glmmTMB(distance_to_water_rounded ~
+                 juldate + feed_type_A_char + species  + transect_GRR + #species_count  + #in ms
+                 (1 | ftransect_id) ,
+                 data = df_transects,
+                 na.action = na.fail,
+                 family = nbinom2)
+
+### Cuation: Numbering differs from those of models in table 2 of the manuscript
+
+bbmle::AICtab(nullmod1, nullmod2, nullmod3, nullmod4, nullmod5,
+              feedmod1, feedmod2, feedmod3, 
+              specmod1, specmod2, specmod3, specmod4, specmod5, specmod6, specmod7, specmod8, 
+              #specmod7, specmod8)
+              specfeedmod)
+```
+
+
+
+```{r}
+saveRDS(specmod4, here::here("output", "mod444_20231113.rds"))
+
+mvvss <- specmod4
+```
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+Sys.time()
+git2r::repository()
+sessionInfo()
+```
+
+</details>
