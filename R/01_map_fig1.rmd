@@ -1,5 +1,5 @@
 ---
-title: "Mammals and Water Availability: Study Area" 
+title: "Mammals and Water Availability: Map Study Area" 
 description: |
     The aim of this study is to assess the effect of water scarcity on the distribution of an African herbivore guild along the Ruaha River, TZ
 author:
@@ -13,7 +13,7 @@ author:
       affiliation: Leibniz Institute for Zoo and Wildlife Research
       affiliation_url: https://izw-berlin.de/en/
       orcid_id: 0000-0003-0465-2543
-date: "`r Sys.Date()`"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
 output: 
     distill::distill_article:
         highlight: kate     
@@ -65,15 +65,15 @@ theme_update(
 ```{r data, results='hide'}
 ## park boundary
 park_bounds_ruaha_utm <- 
-  st_read(here("data-proc", "geo-proc", "park_bounds_ruaha_32636_edited.gpkg"))
+  st_read(here("data", "park_bounds_ruaha_32636_edited.gpkg"))
 
 ## normalized difference vegetation index
-ndvi <- rast(here("data-proc", "geo-proc", "ndvi_201307_crop_32636.tif"))
-# ndvi <- rast(here("data-proc", "geo-proc", "ndvi_201310_crop_32636.tif"))
+ndvi <- rast(here("data", "ndvi_201307_crop_32636.tif"))
+# ndvi <- rast(here("data", "ndvi_201310_crop_32636.tif"))
 
 ## transects
 transects <- 
-  read.table(here("data-proc","stommel_mastertable_20230127.txt"), 
+  read.table(here("data", "stommel_mastertable_20230127.txt"), 
                   header = TRUE, dec = ".", na.strings = "NA", stringsAsFactors = TRUE) |> 
   st_as_sf(coords = c("lon", "lat"), crs = 4326) |> 
   st_transform(st_crs(ndvi))
@@ -101,7 +101,7 @@ values(ndvi_c) <- values(ndvi_c) / 10000
 
 
 ## rivers
-rivers_ruaha_utm <- st_read(here("data-proc", "geo-proc", "rivers_osm_ruaha_32636.gpkg"))
+rivers_ruaha_utm <- st_read(here("data", "rivers_osm_ruaha_32636.gpkg"))
 
 rivers_ruaha_utm_c <- st_crop(rivers_ruaha_utm, transects_buffer)
 
@@ -121,7 +121,7 @@ rivers_ruaha_utm_sub <-
 
 ## pools
 pools <- 
-  vroom::vroom(here("data-proc", "ruaha_spring_pools.csv")) |> 
+  vroom::vroom(here("data", "ruaha_spring_pools.csv")) |> 
   add_row(WAT_ID = 0000, ID_POOL = "Legend", LON = 35.03, LAT = -7.378) |> 
   st_as_sf(coords = c("LON", "LAT"), crs = 4326) |> 
   st_transform(st_crs(park_bounds_ruaha_utm))
