@@ -12,4 +12,4 @@
 /docs/presentations/*
 
 ## ignore copy of old project files
-/_archive
+/_archive/*
